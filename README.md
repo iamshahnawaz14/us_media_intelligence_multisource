@@ -1,5 +1,9 @@
 # U.S. Media Ratings Intelligence — Excel / CSV / SQL Edition
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://usmediaintelligencemultisource-68qhuy3bpupi3rksmkxx8e.streamlit.app/)
+
+> **Live Demo:** Access the live interactive application at [usmediaintelligencemultisource-68qhuy3bpupi3rksmkxx8e.streamlit.app](https://usmediaintelligencemultisource-68qhuy3bpupi3rksmkxx8e.streamlit.app/)
+
 This is a replacement version of your existing Streamlit + Ollama project, now with **four data-source choices** in the sidebar:
 
 - Built-in synthetic CSV (works immediately)
