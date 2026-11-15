@@ -77,5 +77,26 @@ class DataSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(SourceDataError, 'Invalid table name'):
             read_sqlite_data('none.db', 'ratings; DROP TABLE ratings', 20)
 
+    def test_nielsen_report_with_title_and_footer(self):
+        content = (
+            'Report Title (12345)\n\n'
+            '"Geography","Viewing Source","Program","Dates","RTG % (X.X)","SHR %","IMP (000)"\n'
+            '"New Orleans","WVUE-DT 7.1","Pelicans Game","10/22/2026","0.4","2","3"\n'
+            '"New Orleans","WVUE-DT 7.1","Pelicans Game","10/24/2026","0.1","0","0"\n\n'
+            '"Copyright (c) 2026 The Nielsen Company. All rights reserved."\n'
+            'Report Name:,,Sample,,,,,\n'
+        ).encode('utf-8')
+        raw = read_csv_data(content)
+        self.assertEqual(len(raw), 2)
+        prepared = prepare_data(raw, 'Nielsen Test')
+        schema = classify_columns(prepared)
+        self.assertIn('date', schema['dates'])
+        self.assertIn('region', schema['dimensions'])
+        self.assertIn('rating_pct', schema['numerics'])
+        self.assertIn('impressions', schema['numerics'])
+        self.assertIn('shr', schema['numerics'])
+        self.assertEqual(prepared['rating_pct'].iloc[0], 0.4)
+        self.assertEqual(prepared['impressions'].iloc[0], 3)
+
 if __name__ == '__main__':
     unittest.main()

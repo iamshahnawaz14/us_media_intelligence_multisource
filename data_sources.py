@@ -5,8 +5,9 @@ bounded number of rows from a single named table.
 """
 from __future__ import annotations
 
+import csv
 from contextlib import closing
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 import re
 import sqlite3
@@ -15,19 +16,19 @@ import unicodedata
 import pandas as pd
 
 MEDIA_ALIASES = {
-    "date": ("air_date", "event_date", "broadcast_date", "report_date", "day", "datetime", "timestamp"),
+    "date": ("dates", "air_date", "event_date", "broadcast_date", "report_date", "day", "datetime", "timestamp", "telecast_date"),
     "region": ("market", "dma", "geography", "geo", "area", "territory", "location"),
-    "platform": ("medium", "distribution", "service", "device", "channel_type", "source_platform"),
-    "network": ("broadcaster", "station", "channel", "publisher", "media_network"),
+    "platform": ("medium", "distribution", "service", "device", "channel_type", "source_platform", "data_stream"),
+    "network": ("broadcaster", "station", "channel", "publisher", "media_network", "viewing_source"),
     "program": ("show", "title", "program_name", "show_name", "content", "event", "campaign"),
-    "genre": ("category", "content_type", "program_type", "segment"),
+    "genre": ("category", "content_type", "program_type", "segment", "daypart"),
     "viewers": ("audience", "audience_size", "total_viewers", "viewer_count", "viewership", "unique_viewers", "reach"),
-    "impressions": ("total_impressions", "impression_count", "ad_impressions", "views", "view_count"),
-    "rating_pct": ("rating", "rating_percent", "rating_percentage", "audience_rating", "tv_rating"),
+    "impressions": ("total_impressions", "impression_count", "ad_impressions", "views", "view_count", "imp", "imp_000", "impressions_000", "impressions_thousands", "total_imp"),
+    "rating_pct": ("rating", "rating_percent", "rating_percentage", "audience_rating", "tv_rating", "rtg", "rtg_pct", "rtg_x_x"),
     "ad_spend_usd": ("ad_spend", "spend", "media_spend", "cost", "advertising_spend", "budget"),
     "watch_minutes": ("minutes_watched", "watch_time", "viewing_minutes", "total_minutes", "duration_minutes"),
 }
-CANONICAL_NUMERICS = ("viewers", "impressions", "rating_pct", "ad_spend_usd", "watch_minutes")
+CANONICAL_NUMERICS = ("viewers", "impressions", "rating_pct", "shr", "share", "share_pct", "ad_spend_usd", "watch_minutes")
 SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -130,7 +131,7 @@ def prepare_data(df: pd.DataFrame, source_label: str) -> pd.DataFrame:
     numeric_notes: list[str] = []
 
     for column in list(df.columns):
-        name_suggests_date = bool(re.search(r"(^|_)(date|day|time|timestamp|month)(_|$)", column))
+        name_suggests_date = bool(re.search(r"(^|_)(date|dates|day|time|timestamp|month)(_|$)", column))
         if column == "date" or name_suggests_date:
             parsed, ratio, style = _parse_date_series(df[column])
             if ratio >= 0.70:
@@ -166,13 +167,112 @@ def prepare_data(df: pd.DataFrame, source_label: str) -> pd.DataFrame:
     return df
 
 
+def find_csv_table_bounds(text: str) -> tuple[int, int, str]:
+    """Locate the header row index, table end line, and separator for delimited text.
+    
+    Robustly handles files with leading report title/metadata lines and trailing footers/notes.
+    """
+    lines = text.splitlines()
+    if not lines:
+        return 0, 0, ","
+
+    delims = [",", "\t", ";", "|"]
+    best_line_idx = -1
+    best_delim = ","
+    max_cols = 0
+
+    # 1. Search for header candidate within the first 60 lines
+    for idx, line in enumerate(lines[:60]):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for d in delims:
+            try:
+                reader = csv.reader([line], delimiter=d)
+                row = next(reader)
+                non_empty = [c.strip() for c in row if c.strip()]
+                if len(non_empty) >= 2 and len(non_empty) > max_cols:
+                    # Check if at least one subsequent non-empty row has a comparable column count
+                    next_has_match = False
+                    for next_idx in range(idx + 1, min(idx + 6, len(lines))):
+                        next_line = lines[next_idx].strip()
+                        if not next_line:
+                            continue
+                        next_row = next(csv.reader([next_line], delimiter=d))
+                        if len(next_row) >= len(non_empty) - 1:
+                            next_has_match = True
+                            break
+                    if next_has_match or len(non_empty) >= 3 or len(lines) <= 2:
+                        max_cols = len(non_empty)
+                        best_line_idx = idx
+                        best_delim = d
+            except Exception:
+                continue
+
+    if best_line_idx == -1:
+        best_line_idx = 0
+        best_delim = ","
+        for l in lines:
+            if l.strip():
+                counts = {d: l.count(d) for d in delims}
+                best_delim = max(counts, key=counts.get) if max(counts.values()) > 0 else ","
+                break
+
+    end_line_idx = len(lines)
+    header_col_count = max_cols
+    consecutive_empty = 0
+
+    footer_markers = (
+        "copyright", "all rights reserved", "sheet reference",
+        "report name:", "report type:", "report id:", "submitted by:",
+        "selections", "data availability", "general notes:"
+    )
+
+    for idx in range(best_line_idx + 1, len(lines)):
+        line = lines[idx].strip()
+        if not line:
+            consecutive_empty += 1
+            if consecutive_empty >= 2:
+                end_line_idx = idx - consecutive_empty + 1
+                break
+            continue
+        consecutive_empty = 0
+
+        lower = line.lower()
+        if any(marker in lower for marker in footer_markers):
+            end_line_idx = idx
+            break
+
+        try:
+            row = next(csv.reader([line], delimiter=best_delim))
+            non_empty = [c.strip() for c in row if c.strip()]
+            if header_col_count >= 4 and len(non_empty) <= 1:
+                end_line_idx = idx
+                break
+        except Exception:
+            end_line_idx = idx
+            break
+
+    return best_line_idx, end_line_idx, best_delim
+
+
 def read_csv_data(payload: bytes) -> pd.DataFrame:
     last_error: Exception | None = None
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin1"):
         try:
-            return pd.read_csv(BytesIO(payload), sep=None, engine="python", encoding=encoding)
-        except (UnicodeDecodeError, pd.errors.ParserError) as exc:
+            text = payload.decode(encoding)
+            start, end, delim = find_csv_table_bounds(text)
+            lines = text.splitlines()[start:end]
+            if not lines:
+                continue
+            cleaned_text = "\n".join(lines)
+            return pd.read_csv(StringIO(cleaned_text), delimiter=delim)
+        except Exception as exc:
             last_error = exc
+            try:
+                return pd.read_csv(BytesIO(payload), sep=None, engine="python", encoding=encoding)
+            except Exception:
+                pass
     raise SourceDataError(f"Could not read the CSV file: {last_error}")
 
 
@@ -182,7 +282,60 @@ def list_excel_sheets(payload: bytes) -> list[str]:
 
 
 def read_excel_data(payload: bytes, sheet: str) -> pd.DataFrame:
-    return pd.read_excel(BytesIO(payload), sheet_name=sheet, engine="openpyxl")
+    df_all = pd.read_excel(BytesIO(payload), sheet_name=sheet, header=None, engine="openpyxl")
+    if df_all.empty:
+        raise SourceDataError("This worksheet is empty.")
+
+    # Find the header row in the first 40 rows
+    best_row = 0
+    max_non_empty = 0
+    for r_idx in range(min(40, len(df_all))):
+        row_vals = [
+            str(v).strip()
+            for v in df_all.iloc[r_idx]
+            if pd.notna(v) and str(v).strip() and str(v).strip().lower() != "nan"
+        ]
+        if len(row_vals) > max_non_empty and len(row_vals) >= 2:
+            max_non_empty = len(row_vals)
+            best_row = r_idx
+
+    header_cols = [
+        str(v).strip() if pd.notna(v) else f"unnamed_{i}"
+        for i, v in enumerate(df_all.iloc[best_row])
+    ]
+    df_table = df_all.iloc[best_row + 1:].copy()
+    df_table.columns = header_cols
+
+    footer_markers = (
+        "copyright", "all rights reserved", "sheet reference",
+        "report name:", "report type:", "report id:", "submitted by:",
+        "selections", "data availability", "general notes:"
+    )
+
+    end_row = len(df_table)
+    consecutive_empty = 0
+    for idx in range(len(df_table)):
+        row = df_table.iloc[idx]
+        first_cell = str(row.iloc[0]).lower().strip() if pd.notna(row.iloc[0]) else ""
+        if any(marker in first_cell for marker in footer_markers):
+            end_row = idx
+            break
+        non_na = [
+            v for v in row
+            if pd.notna(v) and str(v).strip() and str(v).strip().lower() != "nan"
+        ]
+        if len(non_na) == 0:
+            consecutive_empty += 1
+            if consecutive_empty >= 2:
+                end_row = idx - consecutive_empty + 1
+                break
+        else:
+            consecutive_empty = 0
+
+    clean_df = df_table.iloc[:end_row].dropna(how="all").copy()
+    if clean_df.empty:
+        raise SourceDataError("No data rows found in worksheet.")
+    return clean_df
 
 
 def _safe_identifier(value: str, kind: str) -> str:

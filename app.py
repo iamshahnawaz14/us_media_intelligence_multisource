@@ -166,11 +166,11 @@ with st.sidebar:
     primary_metric = st.selectbox(
         "Primary metric",
         numeric_columns,
-        index=preferred(numeric_columns, ("viewers", "impressions", "rating_pct")),
+        index=preferred(numeric_columns, ("viewers", "impressions", "rating_pct", "shr", "share_pct")),
         format_func=display_name,
     )
     group_options = ["All rows"] + dimension_columns
-    default_group = preferred(group_options, ("platform", "genre", "network"), 1 if dimension_columns else 0)
+    default_group = preferred(group_options, ("platform", "genre", "network", "program", "demo"), 1 if dimension_columns else 0)
     group_column = st.selectbox(
         "Group charts by", group_options, index=default_group, format_func=display_name
     )
@@ -181,7 +181,7 @@ with st.sidebar:
 
     st.header("Filters")
     filter_candidates = [c for c in dimension_columns if all_df[c].nunique(dropna=True) <= 200]
-    preferred_filters = [c for c in ("platform", "region", "genre") if c in filter_candidates]
+    preferred_filters = [c for c in ("platform", "region", "genre", "network", "program", "demo") if c in filter_candidates]
     filter_columns = st.multiselect(
         "Filter columns",
         filter_candidates,
@@ -228,7 +228,7 @@ with dashboard_tab:
     visible_kpis = kpi_metrics[:3]
     cards = st.columns(len(visible_kpis) + 1)
     for card, metric in zip(cards, visible_kpis):
-        use_mean = any(token in metric for token in ("pct", "percent", "rate", "average", "avg"))
+        use_mean = any(token in metric for token in ("pct", "percent", "rate", "average", "avg", "shr", "share"))
         value = filtered[metric].mean() if use_mean else filtered[metric].sum(min_count=1)
         card.metric(("Average " if use_mean else "Total ") + display_name(metric), compact_number(value))
     cards[-1].metric("Rows", f"{len(filtered):,}")
