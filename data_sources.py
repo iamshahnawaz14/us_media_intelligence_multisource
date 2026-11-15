@@ -107,11 +107,34 @@ def _parse_numeric_series(series: pd.Series) -> tuple[pd.Series, float]:
 
 
 def classify_columns(df: pd.DataFrame) -> dict[str, list[str]]:
-    """Return columns that can be used as dates, numeric metrics, or dimensions."""
-    dates = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
-    numerics = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])]
-    ignored = set(dates + numerics + ["data_source"])
-    dimensions = [c for c in df.columns if c not in ignored and df[c].notna().any()]
+    """Return columns that can be used as dates, numeric metrics, or dimensions.
+    
+    Excludes completely empty columns and classifies identifier-like numbers as dimensions.
+    """
+    dates = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c]) and df[c].notna().any()]
+    numerics: list[str] = []
+    dimensions: list[str] = []
+    ignored = set(dates + ["data_source"])
+
+    for c in df.columns:
+        if c in ignored:
+            continue
+        series = df[c]
+        non_null_count = int(series.notna().sum())
+        if non_null_count == 0:
+            continue  # Completely unpopulated column (e.g. empty export artifacts)
+
+        col_lower = str(c).lower()
+        is_id_name = bool(re.search(r"(^|_)(id|identifier|zip|postal|phone|ssn|uuid|code|row_num)(_|$)", col_lower))
+
+        if pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series):
+            if is_id_name:
+                dimensions.append(c)
+            else:
+                numerics.append(c)
+        else:
+            dimensions.append(c)
+
     return {"dates": dates, "numerics": numerics, "dimensions": dimensions}
 
 
@@ -131,8 +154,19 @@ def prepare_data(df: pd.DataFrame, source_label: str) -> pd.DataFrame:
     numeric_notes: list[str] = []
 
     for column in list(df.columns):
-        name_suggests_date = bool(re.search(r"(^|_)(date|dates|day|time|timestamp|month)(_|$)", column))
-        if column == "date" or name_suggests_date:
+        name_suggests_date = bool(re.search(
+            r"(^|_)(date|dates|day|days|time|times|timestamp|month|months|year|week|weeks|quarter|period|airing|broadcast|telecast|datetime|when)(_|$)",
+            column,
+        ))
+        should_check_date = column == "date" or name_suggests_date
+        if not should_check_date and (pd.api.types.is_object_dtype(df[column]) or pd.api.types.is_string_dtype(df[column])):
+            samples = df[column].dropna().head(10)
+            if not samples.empty:
+                parsed_sample = pd.to_datetime(samples, errors="coerce", format="mixed")
+                if parsed_sample.notna().sum() / len(samples) >= 0.70:
+                    should_check_date = True
+
+        if should_check_date:
             parsed, ratio, style = _parse_date_series(df[column])
             if ratio >= 0.70:
                 df[column] = parsed

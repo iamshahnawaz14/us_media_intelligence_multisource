@@ -98,5 +98,21 @@ class DataSourceTests(unittest.TestCase):
         self.assertEqual(prepared['rating_pct'].iloc[0], 0.4)
         self.assertEqual(prepared['impressions'].iloc[0], 3)
 
+    def test_value_based_date_and_identifier_detection(self):
+        frame = pd.DataFrame({
+            'airing_slot': ['2026-05-01', '2026-05-08'],
+            'customer_id': [1001, 1002],
+            'empty_col': [None, None],
+            'total_sales': ['$1,500', '$2,300'],
+        })
+        prepared = prepare_data(frame, 'AutoDetect')
+        schema = classify_columns(prepared)
+        self.assertIn('airing_slot', schema['dates'])
+        self.assertIn('total_sales', schema['numerics'])
+        self.assertIn('customer_id', schema['dimensions'])
+        self.assertNotIn('customer_id', schema['numerics'])
+        self.assertNotIn('empty_col', schema['numerics'])
+        self.assertNotIn('empty_col', schema['dimensions'])
+
 if __name__ == '__main__':
     unittest.main()

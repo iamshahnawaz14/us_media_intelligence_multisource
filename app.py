@@ -151,43 +151,70 @@ dimension_columns = schema["dimensions"]
 report = all_df.attrs.get("preparation_report", {})
 
 with st.sidebar:
-    with st.expander("Detected data structure", expanded=False):
-        st.write(f"**Date columns:** {', '.join(date_columns) or 'None'}")
-        st.write(f"**Numeric metrics:** {', '.join(numeric_columns)}")
-        st.write(f"**Dimensions:** {', '.join(dimension_columns) or 'None'}")
-        if report.get("renamed_aliases"):
-            st.caption("Automatic mappings: " + "; ".join(report["renamed_aliases"]))
-        if report.get("detected_dates"):
-            st.caption("Date parsing: " + "; ".join(report["detected_dates"]))
-
     st.header("Analysis setup")
     date_options = ["No date column"] + date_columns
-    date_column = st.selectbox("Date column", date_options, index=1 if date_columns else 0)
+    default_date_idx = preferred(
+        date_options,
+        ("date", "dates", "air_date", "event_date", "broadcast_date", "day", "timestamp", "period"),
+        1 if date_columns else 0,
+    )
+    date_column = st.selectbox("Date column", date_options, index=default_date_idx)
+
+    preferred_metric_order = (
+        "viewers", "impressions", "rating_pct", "rating", "shr", "share_pct",
+        "reach", "revenue", "sales", "spend", "ad_spend_usd", "watch_minutes",
+        "views", "visits", "clicks", "conversions", "amount", "cost", "total", "count",
+    )
+    best_metric_idx = preferred(numeric_columns, preferred_metric_order, 0)
     primary_metric = st.selectbox(
         "Primary metric",
         numeric_columns,
-        index=preferred(numeric_columns, ("viewers", "impressions", "rating_pct", "shr", "share_pct")),
+        index=best_metric_idx,
         format_func=display_name,
     )
+
     group_options = ["All rows"] + dimension_columns
-    default_group = preferred(group_options, ("platform", "genre", "network", "program", "demo"), 1 if dimension_columns else 0)
-    group_column = st.selectbox(
-        "Group charts by", group_options, index=default_group, format_func=display_name
+    preferred_group_order = (
+        "program", "network", "platform", "genre", "channel", "station",
+        "market", "region", "category", "demo", "characteristic", "daypart",
+        "type", "status", "segment",
     )
-    default_kpis = [primary_metric] + [c for c in numeric_columns if c != primary_metric][:2]
+    best_group_idx = preferred(group_options, preferred_group_order, 1 if dimension_columns else 0)
+    group_column = st.selectbox(
+        "Group charts by", group_options, index=best_group_idx, format_func=display_name
+    )
+
+    other_numerics = [c for c in numeric_columns if c != primary_metric]
+    default_kpis = [primary_metric] + other_numerics[:2]
     kpi_metrics = st.multiselect(
         "KPI metrics", numeric_columns, default=default_kpis, format_func=display_name
     )
 
     st.header("Filters")
     filter_candidates = [c for c in dimension_columns if all_df[c].nunique(dropna=True) <= 200]
-    preferred_filters = [c for c in ("platform", "region", "genre", "network", "program", "demo") if c in filter_candidates]
+    preferred_filter_order = (
+        "program", "network", "platform", "genre", "region", "demo", "market",
+        "category", "station", "channel", "characteristic", "daypart",
+    )
+    detected_filters = [c for c in preferred_filter_order if c in filter_candidates]
+    filter_defaults = detected_filters[:3] if detected_filters else filter_candidates[:3]
     filter_columns = st.multiselect(
         "Filter columns",
         filter_candidates,
-        default=preferred_filters or filter_candidates[:2],
+        default=filter_defaults,
         format_func=display_name,
     )
+
+    with st.expander("Detected data structure", expanded=False):
+        st.write(f"**Date column:** `{date_column}`" if date_column != "No date column" else "**Date column:** _None detected_")
+        st.write(f"**Primary metric:** `{display_name(primary_metric)}`")
+        st.write(f"**Group dimension:** `{display_name(group_column)}`")
+        st.write(f"**Numeric metrics ({len(numeric_columns)}):** {', '.join(numeric_columns) or 'None'}")
+        st.write(f"**Dimensions ({len(dimension_columns)}):** {', '.join(dimension_columns) or 'None'}")
+        if report.get("renamed_aliases"):
+            st.caption("Automatic mappings: " + "; ".join(report["renamed_aliases"]))
+        if report.get("detected_dates"):
+            st.caption("Date parsing: " + "; ".join(report["detected_dates"]))
 
 filtered = all_df.copy()
 with st.sidebar:
@@ -236,15 +263,24 @@ with dashboard_tab:
         st.caption("The first three selected KPI metrics are shown as cards; all remain available below.")
 
     if date_column != "No date column":
-        st.subheader(f"Monthly {display_name(primary_metric)} trend")
         trend_source = filtered.dropna(subset=[date_column]).copy()
-        trend_source["period"] = trend_source[date_column].dt.to_period("M").astype(str)
-        if group_column == "All rows":
-            trend = trend_source.groupby("period")[primary_metric].sum(min_count=1)
-        else:
-            trend = trend_source.groupby(["period", group_column], as_index=False)[primary_metric].sum()
-            trend = trend.pivot(index="period", columns=group_column, values=primary_metric).fillna(0)
-        st.line_chart(trend, y_label=display_name(primary_metric))
+        if not trend_source.empty:
+            valid_dates = trend_source[date_column]
+            days_span = (valid_dates.max() - valid_dates.min()).days
+            if days_span <= 60:
+                freq_title = "Daily"
+                trend_source["period"] = valid_dates.dt.strftime("%Y-%m-%d")
+            else:
+                freq_title = "Monthly"
+                trend_source["period"] = valid_dates.dt.to_period("M").astype(str)
+
+            st.subheader(f"{freq_title} {display_name(primary_metric)} trend")
+            if group_column == "All rows":
+                trend = trend_source.groupby("period")[primary_metric].sum(min_count=1)
+            else:
+                trend = trend_source.groupby(["period", group_column], as_index=False)[primary_metric].sum()
+                trend = trend.pivot(index="period", columns=group_column, values=primary_metric).fillna(0)
+            st.line_chart(trend, y_label=display_name(primary_metric))
 
     left, right = st.columns(2)
     with left:
