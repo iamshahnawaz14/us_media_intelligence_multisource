@@ -1,0 +1,182 @@
+================================================================================
+U.S. MEDIA RATINGS INTELLIGENCE (MULTI-SOURCE EDITION)
+================================================================================
+Project Overview, Technical Architecture, Benefits, and Practical Applications
+
+Live Cloud Application: https://usmediaintelligencemultisource-68qhuy3bpupi3rksmkxx8e.streamlit.app/
+GitHub Repository:     https://github.com/iamshahnawaz14/us_media_intelligence_multisource
+Author:                Shahnawaz (iamshahnawaz14@gmail.com)
+Tech Stack:            Python, Streamlit, Pandas, SQLite, SQLAlchemy, Ollama LLM, Openpyxl
+
+
+================================================================================
+1. EXECUTIVE SUMMARY & WHAT THIS PROJECT IS
+================================================================================
+U.S. Media Ratings Intelligence is an enterprise-grade, multi-source analytical
+dashboard designed to ingest, normalize, clean, and visualize television and
+streaming audience data from virtually any data source without requiring users to
+write code or manually map database schemas.
+
+Historically, media analytics platforms break whenever an exported CSV or Excel
+file changes headers, contains report metadata banners, or comes from different
+measurement providers (such as Nielsen Local TV View, Comscore, or custom internal
+data warehouses). 
+
+This platform eliminates that friction with an adaptive, self-configuring ingestion
+engine. It automatically extracts clean tabular data from messy exports, detects
+dates, metrics, dimensions, and identifiers, dynamically aggregates time-series
+trends, provides an in-memory SQL sandbox, audits data quality, and generates
+executive business summaries via private, locally hosted AI models.
+
+
+================================================================================
+2. HOW IT WORKS (END-TO-END ARCHITECTURE & WORKFLOW)
+================================================================================
+The project follows a clean 4-tier pipeline:
+
+[ Tier 1: Multi-Source Ingestion Engine ]
+   │
+   ├── Built-in Synthetic Dataset (1,700+ rows spanning 2024–2025)
+   ├── Raw Delimited CSV Upload (Auto-detects delimiters and encodings)
+   ├── Multi-Worksheet Excel Upload (.xlsx with sheet discovery)
+   └── SQL Database Connectors (SQLite, PostgreSQL, MySQL, SQL Server)
+   │
+   ▼
+[ Tier 2: Smart Schema & Bounds Normalization (data_sources.py) ]
+   │
+   ├── Table Bounds Discovery: Finds the true header row, skipping title banners
+   ├── Footer Truncation: Strips trailing copyright, notes, and metadata sections
+   ├── Smart Identifier Whitelisting: Replaces dirty symbols ($, %, commas, K/M/B)
+   ├── Media Industry Aliasing: Maps domain terms (e.g. Geography -> Region,
+   │   Viewing Source -> Network, RTG % -> Rating %, IMP (000) -> Impressions)
+   ├── Value-Based Date Detection: Recognizes and converts dates automatically
+   └── Role Classification: Separates Metrics, Dimensions, Dates, and Identifiers
+   │
+   ▼
+[ Tier 3: Adaptive Analytical Application (app.py) ]
+   │
+   ├── Automatic Analysis Setup: Auto-selects best Primary Metric, Group, & KPIs
+   ├── Adaptive Time Aggregation: Daily (< 60 days) or Monthly (> 60 days) trends
+   └── Dynamic Filtering: Interactive multi-select filters across all dimensions
+   │
+   ▼
+[ Tier 4: The 4 Dedicated User Workspaces ]
+   ├── Tab 1: Adaptive Dashboard (KPI Cards, Trend Lines, Distribution, Top 10)
+   ├── Tab 2: SQL Practice Sandbox (In-memory SQLite with security validation)
+   ├── Tab 3: Local AI Insights (Private Ollama LLM executive summaries)
+   └── Tab 4: Data Quality & QA Profile (Automated null, duplicate & logic audits)
+
+
+================================================================================
+3. CORE CAPABILITIES & ADVANCED TECHNICAL HIGHLIGHTS
+================================================================================
+A. Raw Nielsen / Enterprise Export Resilience
+   * Many industry tools (e.g., Nielsen Local TV View / Arianna) export files with
+     leading report titles (e.g., "Report Name (7485499)") and trailing footers
+     with copyright blocks and parameter summaries.
+   * Standard Python parsers crash with "Field delimiter expected" errors.
+   * This project uses an intelligent bounding algorithm (`find_csv_table_bounds`)
+     that isolates the data grid cleanly, ensuring zero parsing crashes.
+
+B. Deep Automatic Column Role Inference
+   * Columns with 100% missing values (like unpopulated "Metrics" or "Indicator"
+     export placeholders) are safely filtered out, preventing empty KPI cards.
+   * Identifiers (e.g., customer_id, zip_code, report_id) are separated from
+     numeric metrics so they are never mistakenly averaged or summed.
+   * Rates and percentages (metrics with "pct", "rate", "shr", "average") are
+     automatically computed as averages, while counts/volumes are summed.
+
+C. In-Memory SQL Query Sandbox
+   * Copies the actively filtered dataset into a transient `:memory:` SQLite table
+     named `ratings`.
+   * Enforces security: accepts only a single, read-only SELECT query.
+   * Protects against SQL injection by blocking mutating statements (INSERT,
+     UPDATE, DELETE, DROP, ALTER, CREATE, ATTACH).
+
+D. Privacy-Preserving Local AI Insights (Ollama)
+   * Connects to a locally running Ollama model (e.g., llama3.2:latest).
+   * Strict Privacy: Never transmits raw records over the internet.
+   * Only sends high-level aggregated metric summaries (top groups, totals, date
+     range) to synthesize 3 concise business observations and 2 follow-up questions.
+
+E. Enterprise SQL Server & Database Integration
+   * Supports production database connections with row-limit bounds to prevent
+     memory exhaustion.
+   * SQLite uses read-only URI mode (`?mode=ro`).
+   * PostgreSQL, MySQL, and Microsoft SQL Server connections use SQLAlchemy
+     metadata reflection with parameter-bound SELECT queries.
+
+
+================================================================================
+4. BUSINESS & USER BENEFITS
+================================================================================
+1. Zero Coding Barrier:
+   Non-technical business stakeholders, TV programmers, and media planners can
+   drag-and-drop proprietary spreadsheets or connect to internal databases and
+   immediately explore insights without asking engineers for custom scripts.
+
+2. Huge Time Savings:
+   Eliminates hours of manual spreadsheet formatting, unpivoting, column renaming,
+   and date conversion before data can be analyzed.
+
+3. Total Privacy & Security:
+   Operates entirely in-browser and locally. No user data is sent to third-party
+   cloud AI services (OpenAI, Anthropic, etc.), making it safe for embargoed,
+   proprietary, or client-sensitive media ratings data.
+
+4. Robust Quality Assurance:
+   The automated Data Quality tab immediately surfaces data flaws (e.g., negative
+   ratings, impressions lower than viewer reach, missing values, duplicates)
+   before reports are delivered to leadership or clients.
+
+5. Portfolio & Learning Platform:
+   Serves as an interactive SQL learning platform where analysts can practice
+   writing real-world analytical queries against live media datasets.
+
+
+================================================================================
+5. PRACTICAL USE CASES
+================================================================================
+* TV & Streaming Broadcast Intelligence:
+  Evaluate program performance, seasonal viewership peaks, broadcast vs. cable
+  vs. streaming share, and telecast re-airs.
+
+* Media Buying & Advertising Campaign Planning:
+  Analyze impressions, ad spend efficiency, daypart allocation, and target
+  demographic reach (e.g. Households vs. Persons 21-49).
+
+* Sports Rights & Sponsorship ROI:
+  Track regional game viewership across local broadcast affiliates (e.g., NBA
+  telecasts on regional sports networks) to validate sponsorship value.
+
+* Cross-Platform Distribution Comparison:
+  Compare engagement across traditional broadcast television, cable networks,
+  and digital streaming platforms side-by-side.
+
+
+================================================================================
+6. HOW TO RUN AND VERIFY THIS PROJECT
+================================================================================
+1. Live in Your Web Browser:
+   Simply visit: https://usmediaintelligencemultisource-68qhuy3bpupi3rksmkxx8e.streamlit.app/
+
+2. Locally on Your Computer:
+   - Clone:
+     git clone https://github.com/iamshahnawaz14/us_media_intelligence_multisource.git
+     cd us_media_intelligence_multisource
+
+   - Install & Run (Windows PowerShell):
+     py -m venv .venv
+     .\.venv\Scripts\pip install -r requirements.txt
+     .\.venv\Scripts\streamlit run app.py
+
+   - Install & Run (macOS / Linux):
+     python3 -m venv .venv
+     source .venv/bin/activate
+     pip install -r requirements.txt
+     streamlit run app.py
+
+3. Run Automated Unit Tests:
+   python -m unittest discover -s tests -v
+   (All 14 tests covering ingestion, schema normalization, and security pass)
+================================================================================
