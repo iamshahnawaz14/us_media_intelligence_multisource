@@ -9,20 +9,35 @@ This is a replacement version of your existing Streamlit + Ollama project, now w
 
 Your **Audience Dashboard**, **SQL Practice**, **Local AI Insights**, and **Data Quality** tabs all analyze the currently selected data source. When you upload a new file, Streamlit changes the source without editing Python code. SQL sources load when you click **Connect / refresh SQL data**.
 
-## Windows / VS Code installation
+## Quick Start & Installation
 
-1. Extract ZIP, open the folder `us_media_intelligence_multisource` in VS Code.
-2. In PowerShell, run:
+Anyone can clone and run this project in 3 simple steps:
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m streamlit run app.py
+### 1. Clone the Repository
+```bash
+git clone https://github.com/iamshahnawaz14/us_media_intelligence_multisource.git
+cd us_media_intelligence_multisource
 ```
 
-Open http://localhost:8501. If your previous Streamlit app is running, stop it first with **Ctrl+C**.
+### 2. Set Up Virtual Environment & Install Dependencies
 
-If you prefer to keep your existing folder, back it up first, then copy the new `app.py` and `data_sources.py` and overwrite `requirements.txt`; also copy `make_demo_sqlite.py` and `data/media_ratings_demo.db`.
+**Windows (PowerShell):**
+```powershell
+py -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+.\.venv\Scripts\streamlit run app.py
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### 3. Open in Browser
+Open **http://localhost:8501** in your browser. The app starts immediately with the built-in demo dataset!
 
 ## Use Excel
 
